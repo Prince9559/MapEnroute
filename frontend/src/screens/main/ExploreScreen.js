@@ -11,7 +11,7 @@ import {
 import { useToast } from '../../context/ToastContext';
 import { askRouteAI } from '../../api/aiApi';
 
-const ExploreScreen = ({ navigation }) => {
+const ExploreScreen = () => {
   const { showToast } = useToast();
   const [aiQuestion, setAiQuestion] = useState('');
   const [fullResponse, setFullResponse] = useState('');
@@ -21,7 +21,7 @@ const ExploreScreen = ({ navigation }) => {
 
   const typingTimerRef = useRef(null);
 
-  // Smooth word-by-word streaming effect without "undefined"
+  // Smooth typewriter streaming
   useEffect(() => {
     if (!fullResponse) {
       setDisplayedResponse('');
@@ -110,7 +110,7 @@ const ExploreScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {(loadingAI || displayedResponse) && (
+        {(loadingAI || displayedResponse) ? (
           <View style={styles.responseBox}>
             <View style={styles.responseBadge}>
               <Text style={styles.responseBadgeText}>
@@ -122,7 +122,7 @@ const ExploreScreen = ({ navigation }) => {
               {isTyping ? ' ▍' : ''}
             </Text>
           </View>
-        )}
+        ) : null}
       </View>
     </ScrollView>
   );
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 16,
     paddingBottom: 40,
     maxWidth: 520,
     width: '100%',

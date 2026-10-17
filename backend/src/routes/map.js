@@ -8,56 +8,81 @@ router.post('/ai-analyze', async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      console.error('ERROR: GEMINI_API_KEY backend .env me nahi mili!');
-      return res.status(500).json({ 
-        success: false, 
-        message: 'GEMINI_API_KEY not found in backend .env' 
+      return res.status(500).json({
+        success: false,
+        message: 'GEMINI_API_KEY not found in backend .env',
       });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // List of model candidates in order of priority
+    const modelCandidates = [
+      'gemini-2.5-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-pro',
+      'gemini-pro',
+    ];
 
-    const googleRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are MapEnroute AI Travel Assistant. The user is asking about travel/routes in India. 
-Question: "${prompt}"
+    let reply = null;
+    let lastError = null;
 
-Provide a direct, practical response covering:
-- Specific actual cafes/dhabas/eateries on this route
-- Highway name / route condition
-- Petrol / EV advice
+    const requestPayload = {
+      contents: [
+        {
+          parts: [
+            {
+              text: `You are MapEnroute AI Travel Assistant. The user is asking about travel/routes in India:
+"${prompt}"
 
-Format cleanly with concise bullet points. Avoid robotic introductory phrases.`
-              }
-            ]
-          }
-        ]
-      })
-    });
+Provide authentic, specific guidance for this exact route covering:
+- Specific cafes, dhabas, or restaurants along this route
+- Highway name / route road conditions
+- Fuel pumps and EV charging points
 
-    const data = await googleRes.json();
+Keep it clear, structured with bullet points, and practical for drivers.`,
+            },
+          ],
+        },
+      ],
+    };
 
-    if (data.error) {
-      console.error('Google Gemini API Error:', data.error);
-      return res.status(500).json({ success: false, message: data.error.message });
+    // Try candidates until one succeeds
+    for (const model of modelCandidates) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const googleRes = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestPayload),
+        });
+
+        const data = await googleRes.json();
+
+        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          reply = data.candidates[0].content.parts[0].text;
+          console.log(`Gemini response generated successfully using model: ${model}`);
+          break;
+        } else if (data.error) {
+          lastError = data.error.message;
+          console.warn(`Model ${model} failed: ${data.error.message}`);
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
     }
 
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    console.log('Gemini generated reply successfully!');
+    if (!reply) {
+      return res.status(500).json({
+        success: false,
+        message: lastError || 'Failed to generate response with available Gemini models',
+      });
+    }
 
     return res.json({
       success: true,
-      reply: reply || 'Could not generate advice for this route.'
+      reply,
     });
-
   } catch (err) {
-    console.error('Backend catch error:', err);
+    console.error('Server AI Route Error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
