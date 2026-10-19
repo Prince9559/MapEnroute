@@ -155,4 +155,5 @@ export const fetchRouteBetweenCoords = async (startCoords, endCoords) => {
     console.error('OSRM Coords Route error:', err);
     return null;
   }
+  
 };
