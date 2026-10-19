@@ -1,164 +1,163 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import RouteSearchBar from '../../components/map/RouteSearchBar';
-import CategoryChips from '../../components/map/CategoryChips';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
 import UnifiedMapView from '../../components/map/UnifiedMapView';
-import { fetchRoute, fetchEnroutePlaces } from '../../api/mapApi';
 import { useToast } from '../../context/ToastContext';
-import { saveRouteToHistory } from '../../utils/historyStorage';
+import { colors } from '../../theme/colors';
+import { getCoordinatesFromName, fetchRouteBetweenCoords } from '../../api/mapApi';
 
-const MapHomeScreen = () => {
+const MapHomeScreen = ({ route }) => {
   const { showToast } = useToast();
-  const [activeCategory, setActiveCategory] = useState(null);
-  const [routeInfo, setRouteInfo] = useState(null);
-  const [stops, setStops] = useState([]);
-  const [selectedStop, setSelectedStop] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
+  const [routeInfo, setRouteInfo] = useState(null); // { distance, duration, path, start, end }
+  const [loadingRoute, setLoadingRoute] = useState(false);
 
-  // Web iframe message listener for stop clicks
+  // Jab Explore tab se "📍 Plot Route" dabayein toh auto-run ho
   useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.data && event.data.type === 'STOP_CLICKED') {
-        setSelectedStop(event.data.stop);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
+    if (route.params?.initialOrigin && route.params?.initialDestination) {
+      const { initialOrigin, initialDestination } = route.params;
+      setOrigin(initialOrigin);
+      setDestination(initialDestination);
+      handleCalculate(initialOrigin, initialDestination);
+    }
+  }, [route.params?.initialOrigin, route.params?.initialDestination]);
 
-  const handleRouteSearch = async (origin, destination) => {
-    if (!origin.trim() || !destination.trim()) {
-      showToast('Please enter both origin and destination.', 'error');
+  const handleCalculate = async (startPlace = origin, endPlace = destination) => {
+    const from = startPlace.trim();
+    const to = endPlace.trim();
+
+    if (!from || !to) {
+      showToast('Please enter both Origin and Destination', 'error');
       return;
     }
 
-    
-    setLoading(true);
-    setStops([]);
-    setSelectedStop(null);
+    setLoadingRoute(true);
+    setRouteInfo(null);
+
     try {
-      const response = await fetchRoute(origin, destination);
-      if (response && response.success) {
-        setRouteInfo(response.data);
-        showToast(
-          `Route found: ${response.data.distance} (~${response.data.duration})`,
-          'success'
-        );
-        // Save to History
-        saveRouteToHistory(response.data);
+      // 1. Geocode Origin
+      const startCoords = await getCoordinatesFromName(from);
+      if (!startCoords) {
+        showToast(`Could not find location: "${from}"`, 'error');
+        setLoadingRoute(false);
+        return;
       }
-    } catch (error) {
-      showToast(error.message || 'Route calculation failed. Check locations.', 'error');
+
+      // 2. Geocode Destination
+      const endCoords = await getCoordinatesFromName(to);
+      if (!endCoords) {
+        showToast(`Could not find location: "${to}"`, 'error');
+        setLoadingRoute(false);
+        return;
+      }
+
+      // 3. OSRM Road Path, KM aur Time nikaalein
+      const result = await fetchRouteBetweenCoords(startCoords, endCoords);
+
+      if (result && result.path.length > 0) {
+        setRouteInfo({
+          startCoords,
+          endCoords,
+          path: result.path,
+          distance: result.distance,
+          duration: result.duration,
+          originName: from,
+          destinationName: to,
+        });
+        showToast(`Route loaded: ${result.distance} • ${result.duration}`, 'success');
+      } else {
+        showToast('No road driving route found between these places.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to calculate route', 'error');
     } finally {
-      setLoading(false);
+      setLoadingRoute(false);
     }
   };
 
-  const handleCategorySelect = async (categoryId, query) => {
-    setActiveCategory(categoryId);
-    setSelectedStop(null);
-
-    if (!categoryId) {
-      setStops([]);
-      return;
-    }
-
-    if (!routeInfo) {
-      showToast('Please search a route first to find enroute spots.', 'info');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      showToast(`Searching ${query} along this route...`, 'info');
-      const res = await fetchEnroutePlaces(routeInfo.points, categoryId);
-      if (res && res.success) {
-        setStops(res.data);
-        showToast(`Found ${res.data.length} ${query} stations on your path!`, 'success');
-      }
-    } catch (err) {
-      showToast(`Unable to load ${query} at the moment.`, 'error');
-    } finally {
-      setLoading(false);
+  const handleSwap = () => {
+    const temp = origin;
+    setOrigin(destination);
+    setDestination(temp);
+    if (temp && destination) {
+      handleCalculate(destination, temp);
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* 1. Map Canvas with Route & Stops */}
-      <UnifiedMapView
-        routePoints={routeInfo?.points || []}
-        startPoint={routeInfo?.startCoords}
-        endPoint={routeInfo?.endCoords}
-        stops={stops}
-      />
+      {/* Top Search Card */}
+      <View style={styles.searchContainer}>
+        <View style={styles.inputWrapper}>
+          <Text style={styles.inputDot}>🟢</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Starting location (e.g. Bhadohi)"
+            placeholderTextColor="#94A3B8"
+            value={origin}
+            onChangeText={setOrigin}
+          />
+        </View>
 
-      {/* 2. Top Controls */}
-      <View style={styles.overlayControls}>
-        <RouteSearchBar onSearchRoute={handleRouteSearch} />
-        <CategoryChips
-          activeCategory={activeCategory}
-          onSelectCategory={handleCategorySelect}
-        />
+        <View style={styles.dividerRow}>
+          <View style={styles.dashedLine} />
+          <TouchableOpacity onPress={handleSwap} style={styles.swapBtn}>
+            <Text style={styles.swapText}>⇅</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.inputWrapper}>
+          <Text style={styles.inputDot}>🔴</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Destination (e.g. Varanasi Junction)"
+            placeholderTextColor="#94A3B8"
+            value={destination}
+            onChangeText={setDestination}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => handleCalculate()}
+          disabled={loadingRoute}
+          activeOpacity={0.8}
+        >
+          {loadingRoute ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.searchButtonText}>Calculate Route</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
-      {/* 3. Loader */}
-      {loading && (
-        <View style={styles.loaderBadge}>
-          <ActivityIndicator size="small" color="#1D4ED8" />
-          <Text style={styles.loaderText}>Searching enroute places...</Text>
+      {/* Floating Info Pill: KM & Time Details */}
+      {routeInfo && (
+        <View style={styles.routeBadge}>
+          <View style={styles.badgeItem}>
+            <Text style={styles.badgeLabel}>DISTANCE</Text>
+            <Text style={styles.badgeValue}>🚗 {routeInfo.distance}</Text>
+          </View>
+          <View style={styles.badgeDivider} />
+          <View style={styles.badgeItem}>
+            <Text style={styles.badgeLabel}>ESTIMATED TIME</Text>
+            <Text style={styles.badgeValue}>⏱️ {routeInfo.duration}</Text>
+          </View>
         </View>
       )}
 
-      {/* 4. Stop Details Card (Jab kisi stop pin par click ho) */}
-      {selectedStop ? (
-        <View style={styles.stopDetailCard}>
-          <View style={styles.stopHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.stopName}>{selectedStop.name}</Text>
-              <Text style={styles.stopBrand}>{selectedStop.brand} • {selectedStop.distanceOffset}</Text>
-            </View>
-            <TouchableOpacity onPress={() => setSelectedStop(null)} style={styles.closeCardBtn}>
-              <Text style={styles.closeCardText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.stopMetaRow}>
-            <View style={styles.ratingBadge}>
-              <Text style={styles.ratingText}>★ {selectedStop.rating}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.addStopBtn}
-              onPress={() => {
-                showToast(`Added ${selectedStop.name} as a stopover!`, 'success');
-                setSelectedStop(null);
-              }}
-            >
-              <Text style={styles.addStopBtnText}>Add Stop to Route</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        /* Default Route Summary Card */
-        routeInfo && (
-          <View style={styles.routeSummaryCard}>
-            <View style={styles.summaryRow}>
-              <View>
-                <Text style={styles.routeDuration}>{routeInfo.duration}</Text>
-                <Text style={styles.routeDistance}>{routeInfo.distance} driving distance</Text>
-              </View>
-              <View style={styles.stopsBadge}>
-                <Text style={styles.stopsBadgeText}>
-                  {stops.length > 0 ? `${stops.length} Filtered` : `${routeInfo.stopsFound} Spots Nearby`}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.routePath}>
-              {routeInfo.origin} ➔ {routeInfo.destination}
-            </Text>
-          </View>
-        )
-      )}
+      {/* Map View */}
+      <View style={styles.mapContainer}>
+        <UnifiedMapView routeData={routeInfo} />
+      </View>
     </View>
   );
 };
@@ -167,161 +166,123 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    position: 'relative',
   },
-  overlayControls: {
+  searchContainer: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 14,
+    left: 14,
+    right: 14,
     zIndex: 10,
-    maxWidth: 500,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  loaderBadge: {
-    position: 'absolute',
-    top: 180,
-    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    zIndex: 20,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-  },
-  loaderText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1D4ED8',
-  },
-  routeSummaryCard: {
-    position: 'absolute',
-    bottom: 24,
-    left: 16,
-    right: 16,
-    maxWidth: 500,
-    alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    elevation: 8,
+    borderRadius: 16,
+    padding: 14,
     shadowColor: '#0F172A',
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.1,
     shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 16,
+    shadowRadius: 10,
+    elevation: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    zIndex: 10,
   },
-  summaryRow: {
+  inputWrapper: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  inputDot: {
+    fontSize: 12,
+    marginRight: 8,
+  },
+  input: {
+    flex: 1,
+    height: 40,
+    fontSize: 13.5,
+    color: '#0F172A',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginVertical: 4,
+    paddingRight: 8,
+  },
+  dashedLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginRight: 8,
+  },
+  swapBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swapText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: 'bold',
+  },
+  searchButton: {
+    backgroundColor: colors?.primary || '#1D4ED8',
+    marginTop: 10,
+    borderRadius: 10,
+    height: 42,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  routeDuration: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#10B981',
-  },
-  routeDistance: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  stopsBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  stopsBadgeText: {
-    color: '#1D4ED8',
+  searchButtonText: {
+    color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 12,
+    fontSize: 13.5,
   },
-  routePath: {
-    fontSize: 14,
-    color: '#1E293B',
-    fontWeight: '600',
-    marginTop: 10,
-  },
-  stopDetailCard: {
+  routeBadge: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 20,
     left: 16,
     right: 16,
-    maxWidth: 500,
-    alignSelf: 'center',
+    zIndex: 10,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    elevation: 10,
-    shadowColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    shadowColor: '#000',
     shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    zIndex: 20,
   },
-  stopHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  stopName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  stopBrand: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 3,
-  },
-  closeCardBtn: {
-    padding: 4,
-  },
-  closeCardText: {
-    fontSize: 16,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  stopMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  badgeItem: {
     alignItems: 'center',
-    marginTop: 14,
   },
-  ratingBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  ratingText: {
-    color: '#B45309',
+  badgeLabel: {
+    fontSize: 10,
     fontWeight: '700',
-    fontSize: 13,
+    color: '#64748B',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  addStopBtn: {
-    backgroundColor: '#1D4ED8',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
+  badgeValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  addStopBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 13,
+  badgeDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: '#E2E8F0',
+  },
+  mapContainer: {
+    flex: 1,
   },
 });
 

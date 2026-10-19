@@ -14,10 +14,10 @@ const BottomTabNavigator = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: true,
-        headerStyle: { backgroundColor: colors.surface },
-        headerTitleStyle: { color: colors.textPrimary, fontWeight: '700' },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
+        headerStyle: { backgroundColor: colors?.surface || '#FFFFFF' },
+        headerTitleStyle: { color: colors?.textPrimary || '#0F172A', fontWeight: '700' },
+        tabBarActiveTintColor: colors?.primary || '#1D4ED8',
+        tabBarInactiveTintColor: colors?.textSecondary || '#64748B',
         tabBarStyle: { height: 60, paddingBottom: 6, paddingTop: 4 },
         tabBarIcon: ({ focused }) => {
           let icon = '🗺️';
