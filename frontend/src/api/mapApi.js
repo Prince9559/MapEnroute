@@ -29,12 +29,17 @@ export const geocodePlace = async (query) => {
       };
     }
   } catch (e) {
-    // OSM failed, smoothly proceed to AI fallback
+    // Proceed to AI fallback
   }
 
-  // Try 2: Universal AI Geocoding (Har gaon, chhota kasba, bazaar ko accurately identify karega)
+  // Try 2: Universal AI Geocoding (Har gaon, chhota kasba, bazaar identify karega)
   try {
-    const aiRes = await client.post('/map/geocode-ai', { placeName: cleanQuery });
+    const aiRes = await client.post(
+      '/map/geocode-ai',
+      { placeName: cleanQuery },
+      { timeout: 45000 } // Extended timeout for AI geocoding
+    );
+
     if (aiRes.data?.success && aiRes.data?.data) {
       const { lat, lng, displayName } = aiRes.data.data;
       return {

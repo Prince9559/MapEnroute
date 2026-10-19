@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-// 1. Travel Assistant AI
+// 1. AI Travel Assistant
 router.post('/ai-analyze', async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -43,7 +43,7 @@ Keep it direct and brief.`,
   }
 });
 
-// 2. 100% Bulletproof Universal AI Geocoder (Any Indian Village / Town / Market)
+// 2. High-Speed Ultra-Light AI Geocoder
 router.post('/geocode-ai', async (req, res) => {
   try {
     const { placeName } = req.body;
@@ -57,18 +57,14 @@ router.post('/geocode-ai', async (req, res) => {
       return res.status(500).json({ success: false, message: 'GEMINI_API_KEY missing' });
     }
 
-    console.log(`Geocoding request received for: "${placeName}"`);
+    console.log(`Geocoding request for: "${placeName}"`);
 
     const targetModel = 'gemini-3.8-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
 
-    const promptText = `Find the realistic GPS Latitude and Longitude for this Indian location, village, town, or market:
-Location query: "${placeName}"
-
-Return strictly a single JSON object with this exact shape:
-{"lat": 25.2613, "lng": 82.6140, "displayName": "Name, District, State"}
-
-Do not include any greeting, markdown ticks, or extra words. Only raw JSON.`;
+    const promptText = `Indian place query: "${placeName}"
+Output ONLY this JSON and nothing else:
+{"lat": 25.0, "lng": 82.0, "displayName": "Name, State"}`;
 
     const googleRes = await fetch(url, {
       method: 'POST',
@@ -76,7 +72,8 @@ Do not include any greeting, markdown ticks, or extra words. Only raw JSON.`;
       body: JSON.stringify({
         contents: [{ parts: [{ text: promptText }] }],
         generationConfig: {
-          temperature: 0.1, // High deterministic accuracy
+          maxOutputTokens: 60, // Minimal tokens = 1 second response
+          temperature: 0.1,
         },
       }),
     });
@@ -84,26 +81,20 @@ Do not include any greeting, markdown ticks, or extra words. Only raw JSON.`;
     const data = await googleRes.json();
 
     if (data.error) {
-      console.error('Gemini Geocode API Error:', data.error);
+      console.error('Gemini API Error:', data.error);
       return res.status(500).json({ success: false, message: data.error.message });
     }
 
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log('Gemini raw output:', rawText);
-
-    // Robust JSON extraction using regex (even if AI puts backticks or extra text)
     const jsonMatch = rawText.match(/\{[\s\S]*?\}/);
+
     if (!jsonMatch) {
-      throw new Error(`Invalid AI format received: ${rawText}`);
+      throw new Error(`Invalid format: ${rawText}`);
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    if (!parsed.lat || !parsed.lng) {
-      throw new Error('Coordinates missing in AI response');
-    }
-
-    console.log(`Successfully geocoded "${placeName}" -> Lat: ${parsed.lat}, Lng: ${parsed.lng}`);
+    console.log(`Geocoded "${placeName}" successfully -> (${parsed.lat}, ${parsed.lng})`);
 
     return res.json({
       success: true,
