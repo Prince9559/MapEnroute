@@ -1,17 +1,11 @@
 import client from './client';
 
-// ==========================================
-// MapEnroute - 100% Dynamic All-India Geocoder & Router
-// ==========================================
-
-/**
- * 1. Universal Geocoding: Pehle OpenStreetMap, agar gaon na mile toh AI Backend se
- */
+// 1. Universal Smart Geocoder
 export const geocodePlace = async (query) => {
   if (!query || !query.trim()) return null;
   const cleanQuery = query.trim();
 
-  // Step A: OpenStreetMap Global / India Search
+  // Try 1: OpenStreetMap Nominatim Standard Search
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
       cleanQuery + ', India'
@@ -19,7 +13,7 @@ export const geocodePlace = async (query) => {
 
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'MapEnroute-Universal/1.0',
+        'User-Agent': 'MapEnroute-Universal-App/1.0',
         'Accept-Language': 'en,hi',
       },
     });
@@ -35,10 +29,10 @@ export const geocodePlace = async (query) => {
       };
     }
   } catch (e) {
-    // OSM network failed or blocked
+    // OSM failed, smoothly proceed to AI fallback
   }
 
-  // Step B: Universal AI Geocoding (Har gaon, chhota kasba, bazaar identify karega)
+  // Try 2: Universal AI Geocoding (Har gaon, chhota kasba, bazaar ko accurately identify karega)
   try {
     const aiRes = await client.post('/map/geocode-ai', { placeName: cleanQuery });
     if (aiRes.data?.success && aiRes.data?.data) {
@@ -52,7 +46,7 @@ export const geocodePlace = async (query) => {
       };
     }
   } catch (err) {
-    console.warn('AI Geocode fallback failed:', err.message);
+    console.warn('AI Geocode Error:', err?.response?.data || err.message);
   }
 
   return null;
@@ -60,16 +54,14 @@ export const geocodePlace = async (query) => {
 
 export const getCoordinatesFromName = geocodePlace;
 
-/**
- * 2. Real Driving Route, Exact KM aur Realistic Time
- */
+// 2. Real Driving Path, Exact KM & Travel Time
 export const fetchRoute = async (origin, destination) => {
   const startLoc = await geocodePlace(origin);
   const endLoc = await geocodePlace(destination);
 
   if (!startLoc || !endLoc) {
     const missing = !startLoc ? origin : destination;
-    throw new Error(`Location locate nahi hui: "${missing}". Kripya naam check karein.`);
+    throw new Error(`Location locate nahi hui: "${missing}". Kripya spelling check karein.`);
   }
 
   const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLoc.lng},${startLoc.lat};${endLoc.lng},${endLoc.lat}?overview=full&geometries=geojson&steps=true`;
@@ -78,7 +70,7 @@ export const fetchRoute = async (origin, destination) => {
   const routeData = await res.json();
 
   if (!routeData.routes || routeData.routes.length === 0) {
-    throw new Error('In dono locations ke beech road route calculate nahi ho saka.');
+    throw new Error('In dono locations ke beech driving road path nahi mila.');
   }
 
   const route = routeData.routes[0];
@@ -109,7 +101,6 @@ export const fetchRoute = async (origin, destination) => {
       duration: formattedTime,
       distanceRaw: distanceKm,
       durationRaw: durationMin,
-      stopsFound: Math.max(2, Math.round(distanceKm * 0.3)),
       points: coordinates,
       path: coordinates,
       steps,
